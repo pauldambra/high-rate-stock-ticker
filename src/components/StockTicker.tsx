@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Stock, Exchange, ExchangePrices, ExchangeStockPrice, StockTickerState } from '@/types/stock';
+import { Stock, Exchange, ExchangePrices, ExchangeStockPrice, StockTickerState, StockTickerProps } from '@/types/stock';
 import {
     generateInitialStocks,
     generateInitialExchangePrices,
@@ -11,7 +11,7 @@ import {
     EXCHANGES
 } from '@/lib/stockData';
 
-export default function StockTicker() {
+export default function StockTicker({ mutationRate = 80 }: StockTickerProps) {
     const [state, setState] = useState<StockTickerState>(() => {
         const initialStocks = generateInitialStocks();
         const exchanges = EXCHANGES;
@@ -23,12 +23,17 @@ export default function StockTicker() {
         };
     });
 
-    // Aggressive mutation engine - targeting 80+ mutations per second across all cells
+    // Dynamic mutation engine based on configurable mutation rate
     useEffect(() => {
         const intervals: NodeJS.Timeout[] = [];
 
-        // Create 8 different mutation intervals for maximum visual activity
-        for (let i = 0; i < 8; i++) {
+        // Calculate intervals based on desired mutation rate
+        // We'll distribute the mutations across multiple intervals for smoother animation
+        const numberOfIntervals = Math.min(8, Math.max(1, Math.floor(mutationRate / 10)));
+        const baseInterval = Math.max(10, Math.floor(1000 / mutationRate * numberOfIntervals));
+
+        // Create multiple mutation intervals for smooth visual activity
+        for (let i = 0; i < numberOfIntervals; i++) {
             const interval = setInterval(() => {
                 setState(prevState => {
                     const newExchangePrices = { ...prevState.exchangePrices };
@@ -51,7 +56,7 @@ export default function StockTicker() {
                         exchangePrices: newExchangePrices
                     };
                 });
-            }, 15 + i * 10); // 15ms, 25ms, 35ms, 45ms, 55ms, 65ms, 75ms, 85ms intervals
+            }, baseInterval + i * 10); // Stagger intervals by 10ms each
 
             intervals.push(interval);
         }
@@ -59,16 +64,20 @@ export default function StockTicker() {
         return () => {
             intervals.forEach(clearInterval);
         };
-    }, []);
+    }, [mutationRate]);
 
-    // Additional burst mutation for even more activity
+    // Additional burst mutation for higher mutation rates
     useEffect(() => {
+        if (mutationRate < 50) {
+            return; // Skip burst mutations for lower rates
+        }
+
         const burstInterval = setInterval(() => {
             setState(prevState => {
                 const newExchangePrices = { ...prevState.exchangePrices };
 
-                // Mutate 3-5 random cells in a burst
-                const burstCount = 3 + Math.floor(Math.random() * 3);
+                // Mutate multiple cells in a burst (scale with mutation rate)
+                const burstCount = Math.max(1, Math.floor(mutationRate / 30));
                 for (let i = 0; i < burstCount; i++) {
                     const randomExchange = prevState.exchanges[Math.floor(Math.random() * prevState.exchanges.length)];
                     const randomStock = prevState.stocks[Math.floor(Math.random() * prevState.stocks.length)];
@@ -88,10 +97,10 @@ export default function StockTicker() {
                     exchangePrices: newExchangePrices
                 };
             });
-        }, 100); // Every 100ms, burst mutate multiple cells
+        }, Math.max(50, 200 - mutationRate)); // Faster bursts for higher mutation rates
 
         return () => clearInterval(burstInterval);
-    }, []);
+    }, [mutationRate]);
 
     const formatPrice = (price: number) => {
         return `$${price.toFixed(2)}`;
@@ -193,7 +202,10 @@ export default function StockTicker() {
                     {/* Footer info */}
                     <div className="mt-4 text-xs text-gray-500 text-center space-y-1">
                         <div>Total cells: {state.stocks.length * state.exchanges.length} • All cells updating in real-time</div>
-                        <div>Mutation rate: ~80+ updates per second across all exchanges</div>
+                        <div>Mutation rate: ~{mutationRate} updates per second across all exchanges</div>
+                        <div className="text-blue-600">
+                            💡 Control mutation rate via URL: ?mutationRate={mutationRate} (1-1000)
+                        </div>
                     </div>
                 </CardContent>
             </Card>

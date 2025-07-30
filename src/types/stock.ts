@@ -31,4 +31,8 @@ export interface StockTickerState {
     exchanges: Exchange[];
     exchangePrices: ExchangePrices;
     currentDayOffset: number;
+}
+
+export interface StockTickerProps {
+    mutationRate?: number; // mutations per second, defaults to 80
 } 
