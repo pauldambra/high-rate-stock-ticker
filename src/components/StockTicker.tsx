@@ -12,19 +12,24 @@ import {
 } from '@/lib/stockData';
 
 export default function StockTicker({ mutationRate = 80 }: StockTickerProps) {
-    const [state, setState] = useState<StockTickerState>(() => {
+    const [state, setState] = useState<StockTickerState | null>(null);
+
+    // Initialize state on the client to avoid hydration mismatch
+    useEffect(() => {
         const initialStocks = generateInitialStocks();
         const exchanges = EXCHANGES;
-        return {
+        setState({
             stocks: initialStocks,
             exchanges,
             exchangePrices: generateInitialExchangePrices(initialStocks, exchanges),
             currentDayOffset: 0
-        };
-    });
+        });
+    }, []);
 
     // Dynamic mutation engine based on configurable mutation rate
     useEffect(() => {
+        if (!state) return; // Don't start mutations until state is initialized
+
         const intervals: NodeJS.Timeout[] = [];
 
         // Calculate intervals based on desired mutation rate
@@ -36,6 +41,8 @@ export default function StockTicker({ mutationRate = 80 }: StockTickerProps) {
         for (let i = 0; i < numberOfIntervals; i++) {
             const interval = setInterval(() => {
                 setState(prevState => {
+                    if (!prevState) return prevState;
+
                     const newExchangePrices = { ...prevState.exchangePrices };
 
                     // Randomly select exchange and stock to mutate
@@ -64,16 +71,18 @@ export default function StockTicker({ mutationRate = 80 }: StockTickerProps) {
         return () => {
             intervals.forEach(clearInterval);
         };
-    }, [mutationRate]);
+    }, [mutationRate, state]);
 
     // Additional burst mutation for higher mutation rates
     useEffect(() => {
-        if (mutationRate < 50) {
-            return; // Skip burst mutations for lower rates
+        if (!state || mutationRate < 50) {
+            return; // Skip burst mutations for lower rates or if state not initialized
         }
 
         const burstInterval = setInterval(() => {
             setState(prevState => {
+                if (!prevState) return prevState;
+
                 const newExchangePrices = { ...prevState.exchangePrices };
 
                 // Mutate multiple cells in a burst (scale with mutation rate)
@@ -100,7 +109,7 @@ export default function StockTicker({ mutationRate = 80 }: StockTickerProps) {
         }, Math.max(50, 200 - mutationRate)); // Faster bursts for higher mutation rates
 
         return () => clearInterval(burstInterval);
-    }, [mutationRate]);
+    }, [mutationRate, state]);
 
     const formatPrice = (price: number) => {
         return `$${price.toFixed(2)}`;
@@ -124,6 +133,29 @@ export default function StockTicker({ mutationRate = 80 }: StockTickerProps) {
         }
         return 'bg-white';
     };
+
+    // Show loading state during hydration
+    if (!state) {
+        return (
+            <div className="p-4 max-w-full overflow-x-auto">
+                <Card>
+                    <CardHeader>
+                        <CardTitle className="text-2xl font-bold text-center">
+                            Global Stock Exchange Dashboard
+                        </CardTitle>
+                        <div className="text-center text-sm text-gray-500">
+                            Loading...
+                        </div>
+                    </CardHeader>
+                    <CardContent>
+                        <div className="animate-pulse">
+                            <div className="h-32 bg-gray-200 rounded"></div>
+                        </div>
+                    </CardContent>
+                </Card>
+            </div>
+        );
+    }
 
     return (
         <div className="p-4 max-w-full overflow-x-auto">

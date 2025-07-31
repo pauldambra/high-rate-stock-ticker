@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import RRWebRecorder from "@/components/RRWebRecorder";
+import RRWebViewer from "@/components/RRWebViewer";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -40,6 +42,8 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
+        <RRWebRecorder />
+        <RRWebViewer />
         {children}
       </body>
     </html>
