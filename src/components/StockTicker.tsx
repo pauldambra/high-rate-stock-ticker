@@ -7,21 +7,39 @@ import { Stock, Exchange, ExchangePrices, ExchangeStockPrice, StockTickerState, 
 import {
     generateInitialStocks,
     generateInitialExchangePrices,
+    generateInitialExchangePricesIncremental,
     mutateExchangeStockPrice,
+    incrementExchangeStockPrice,
     EXCHANGES
 } from '@/lib/stockData';
 
 export default function StockTicker({ mutationRate = 80 }: StockTickerProps) {
     const [state, setState] = useState<StockTickerState | null>(null);
+    const [isRandomMode, setIsRandomMode] = useState(false);
 
     // Initialize state on the client to avoid hydration mismatch
     useEffect(() => {
-        const initialStocks = generateInitialStocks();
-        const exchanges = EXCHANGES;
+        // Check query parameters
+        const urlParams = new URLSearchParams(window.location.search);
+        const randomMode = urlParams.get('mode') === 'random';
+        setIsRandomMode(randomMode);
+
+        // Parse grid size parameters
+        const gridColsParam = urlParams.get('gridCols');
+        const gridRowsParam = urlParams.get('gridRows');
+
+        const gridCols = gridColsParam ? parseInt(gridColsParam) : undefined;
+        const gridRows = gridRowsParam ? parseInt(gridRowsParam) : undefined;
+
+        const initialStocks = generateInitialStocks(gridCols);
+        const exchanges = gridRows ? EXCHANGES.slice(0, gridRows) : EXCHANGES;
+
         setState({
             stocks: initialStocks,
             exchanges,
-            exchangePrices: generateInitialExchangePrices(initialStocks, exchanges),
+            exchangePrices: randomMode
+                ? generateInitialExchangePrices(initialStocks, exchanges)
+                : generateInitialExchangePricesIncremental(initialStocks, exchanges),
             currentDayOffset: 0
         });
     }, []);
@@ -53,9 +71,9 @@ export default function StockTicker({ mutationRate = 80 }: StockTickerProps) {
                         newExchangePrices[randomExchange.code] = {
                             ...newExchangePrices[randomExchange.code]
                         };
-                        newExchangePrices[randomExchange.code][randomStock.symbol] = mutateExchangeStockPrice(
-                            newExchangePrices[randomExchange.code][randomStock.symbol]
-                        );
+                        newExchangePrices[randomExchange.code][randomStock.symbol] = isRandomMode
+                            ? mutateExchangeStockPrice(newExchangePrices[randomExchange.code][randomStock.symbol])
+                            : incrementExchangeStockPrice(newExchangePrices[randomExchange.code][randomStock.symbol]);
                     }
 
                     return {
@@ -95,9 +113,9 @@ export default function StockTicker({ mutationRate = 80 }: StockTickerProps) {
                         newExchangePrices[randomExchange.code] = {
                             ...newExchangePrices[randomExchange.code]
                         };
-                        newExchangePrices[randomExchange.code][randomStock.symbol] = mutateExchangeStockPrice(
-                            newExchangePrices[randomExchange.code][randomStock.symbol]
-                        );
+                        newExchangePrices[randomExchange.code][randomStock.symbol] = isRandomMode
+                            ? mutateExchangeStockPrice(newExchangePrices[randomExchange.code][randomStock.symbol])
+                            : incrementExchangeStockPrice(newExchangePrices[randomExchange.code][randomStock.symbol]);
                     }
                 }
 
@@ -166,6 +184,20 @@ export default function StockTicker({ mutationRate = 80 }: StockTickerProps) {
                     </CardTitle>
                     <div className="text-center text-sm text-gray-500">
                         Live updates • High-frequency mutations • {state.stocks.length} stocks × {state.exchanges.length} exchanges
+                        <br />
+                        <div className="flex items-center justify-center gap-2 mt-2">
+                            <Badge variant={isRandomMode ? "default" : "secondary"}>
+                                {isRandomMode ? "Random Mode" : "Incremental Mode (Test)"}
+                            </Badge>
+                            <Badge variant="outline" className="text-xs">
+                                Grid: {state.exchanges.length}×{state.stocks.length}
+                            </Badge>
+                        </div>
+                        {!isRandomMode && (
+                            <div className="mt-1 text-xs text-blue-600">
+                                Values start at 0 and increment by 1
+                            </div>
+                        )}
                     </div>
                 </CardHeader>
                 <CardContent>

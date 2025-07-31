@@ -50,8 +50,9 @@ export const EXCHANGES: Exchange[] = [
     { code: 'FWB', name: 'Frankfurt Stock Exchange', country: 'Germany', timezone: 'CET' }
 ];
 
-export function generateInitialStocks(): Stock[] {
-    return STOCK_SYMBOLS.map(symbol => ({
+export function generateInitialStocks(count?: number): Stock[] {
+    const symbols = count ? STOCK_SYMBOLS.slice(0, count) : STOCK_SYMBOLS;
+    return symbols.map(symbol => ({
         symbol,
         name: COMPANY_NAMES[symbol] || `${symbol} Corp.`
     }));
@@ -84,6 +85,26 @@ export function generateInitialExchangePrices(stocks: Stock[], exchanges: Exchan
     return exchangePrices;
 }
 
+export function generateInitialExchangePricesIncremental(stocks: Stock[], exchanges: Exchange[]): ExchangePrices {
+    const exchangePrices: ExchangePrices = {};
+
+    exchanges.forEach(exchange => {
+        exchangePrices[exchange.code] = {};
+
+        stocks.forEach(stock => {
+            exchangePrices[exchange.code][stock.symbol] = {
+                price: 0,
+                change: 0,
+                changePercent: 0,
+                volume: 0,
+                lastUpdated: Date.now()
+            };
+        });
+    });
+
+    return exchangePrices;
+}
+
 export function mutateExchangeStockPrice(stockPrice: ExchangeStockPrice): ExchangeStockPrice {
     const volatility = 0.015; // 1.5% max change per mutation (slightly lower for more frequent mutations)
     const changePercent = (Math.random() - 0.5) * volatility * 2;
@@ -100,6 +121,23 @@ export function mutateExchangeStockPrice(stockPrice: ExchangeStockPrice): Exchan
         change: totalChange,
         changePercent: totalChangePercent,
         volume: stockPrice.volume + Math.floor(Math.random() * 1000),
+        lastUpdated: Date.now()
+    };
+}
+
+export function incrementExchangeStockPrice(stockPrice: ExchangeStockPrice): ExchangeStockPrice {
+    const newPrice = stockPrice.price + 1;
+    const priceChange = 1;
+
+    // Calculate change percentage (avoid division by zero for initial 0 price)
+    const previousPrice = stockPrice.price === 0 ? 1 : stockPrice.price;
+    const changePercent = (priceChange / previousPrice) * 100;
+
+    return {
+        price: newPrice,
+        change: stockPrice.change + priceChange,
+        changePercent: changePercent,
+        volume: stockPrice.volume + 1,
         lastUpdated: Date.now()
     };
 }

@@ -244,14 +244,183 @@ class RRWebDBManager {
         };
     }
 
+    async getAllEvents(): Promise<any[]> {
+        if (!this.db || !this.isReady) {
+            throw new Error('Database not ready');
+        }
+
+        return new Promise((resolve, reject) => {
+            const transaction = this.db!.transaction(['events'], 'readonly');
+            const store = transaction.objectStore('events');
+            const request = store.getAll();
+
+            request.onsuccess = () => {
+                resolve(request.result);
+            };
+
+            request.onerror = () => {
+                reject(request.error);
+            };
+
+            transaction.onerror = () => {
+                reject(transaction.error);
+            };
+        });
+    }
+
+    async getEventsBySession(sessionId: string): Promise<any[]> {
+        if (!this.db || !this.isReady) {
+            throw new Error('Database not ready');
+        }
+
+        return new Promise((resolve, reject) => {
+            const transaction = this.db!.transaction(['events'], 'readonly');
+            const store = transaction.objectStore('events');
+            const index = store.index('sessionId');
+            const request = index.getAll(sessionId);
+
+            request.onsuccess = () => {
+                resolve(request.result);
+            };
+
+            request.onerror = () => {
+                reject(request.error);
+            };
+
+            transaction.onerror = () => {
+                reject(transaction.error);
+            };
+        });
+    }
+
+    async getAllSessions(): Promise<string[]> {
+        if (!this.db || !this.isReady) {
+            throw new Error('Database not ready');
+        }
+
+        return new Promise((resolve, reject) => {
+            const transaction = this.db!.transaction(['events'], 'readonly');
+            const store = transaction.objectStore('events');
+            const request = store.getAll();
+
+            request.onsuccess = () => {
+                // Extract unique session IDs from the actual records
+                const events = request.result;
+                const sessionIds = events
+                    .map((event: any) => event.sessionId)
+                    .filter((sessionId: any) => sessionId && typeof sessionId === 'string')
+                    .filter((sessionId: string, index: number, array: string[]) => array.indexOf(sessionId) === index); // unique only
+
+                resolve(sessionIds);
+            };
+
+            request.onerror = () => {
+                reject(request.error);
+            };
+
+            transaction.onerror = () => {
+                reject(transaction.error);
+            };
+        });
+    }
+
+    async exportSession(sessionId: string): Promise<void> {
+        try {
+            const events = await this.getEventsBySession(sessionId);
+
+            if (events.length === 0) {
+                alert('No events found for this session');
+                return;
+            }
+
+            // Export just the rrweb events array for direct replay
+            const rrwebEvents = events.map(event => event.data);
+
+            // Create and download the file
+            const blob = new Blob([JSON.stringify(rrwebEvents, null, 2)], {
+                type: 'application/json'
+            });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `rrweb-session-${sessionId.substring(0, 15)}-${new Date().toISOString().split('T')[0]}.json`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+
+            console.log(`Exported ${events.length} rrweb events for session ${sessionId}`);
+        } catch (error) {
+            console.error('Error exporting session:', error);
+            alert('Failed to export session. Check console for details.');
+        }
+    }
+
+    async exportAllSessions(): Promise<void> {
+        try {
+            const allEvents = await this.getAllEvents();
+
+            if (allEvents.length === 0) {
+                alert('No events found to export');
+                return;
+            }
+
+            // Group events by session
+            const sessionGroups = allEvents.reduce((groups, event) => {
+                const sessionId = event.sessionId;
+                if (!groups[sessionId]) {
+                    groups[sessionId] = [];
+                }
+                groups[sessionId].push(event);
+                return groups;
+            }, {} as Record<string, any[]>);
+
+            const sessionIds = Object.keys(sessionGroups);
+            const dateStr = new Date().toISOString().split('T')[0];
+
+            // Export each session as a separate rrweb-compatible file
+            for (const sessionId of sessionIds) {
+                const sessionEvents = sessionGroups[sessionId];
+                const rrwebEvents = sessionEvents.map((event: any) => event.data);
+
+                const blob = new Blob([JSON.stringify(rrwebEvents, null, 2)], {
+                    type: 'application/json'
+                });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `rrweb-session-${sessionId.substring(0, 15)}-${dateStr}.json`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+
+                // Small delay between downloads to avoid browser blocking
+                await new Promise(resolve => setTimeout(resolve, 100));
+            }
+
+            console.log(`Exported ${sessionIds.length} sessions as separate rrweb-compatible files`);
+        } catch (error) {
+            console.error('Error exporting all sessions:', error);
+            alert('Failed to export sessions. Check console for details.');
+        }
+    }
+
     async clearDatabase(): Promise<void> {
+        // Mark as not ready immediately
+        this.isReady = false;
+        this.isInitializing = false;
+
+        // Close existing connection if open
         if (this.db) {
             this.db.close();
             this.db = null;
         }
-        this.isReady = false;
-        this.isInitializing = false;
+
+        // Clear event queue
         this.eventQueue = [];
+
+        // Delete the database
         await this.deleteDatabase();
         console.log('Database cleared and reset');
     }
@@ -286,7 +455,7 @@ export default function RRWebRecorder() {
                 // Load the rrweb script if not already loaded
                 if (!window.rrweb) {
                     const script = document.createElement('script');
-                    script.src = '/js/record.js';
+                    script.src = '/js/record-perf-branch.js';
                     script.onload = initRecording;
                     script.onerror = (error) => {
                         console.error('Failed to load rrweb script:', error);
@@ -310,10 +479,69 @@ export default function RRWebRecorder() {
             try {
                 await dbManager.clearDatabase();
                 console.log('RRWeb database cleared successfully');
+                // Re-initialize the database so it's ready for new recordings
+                await dbManager.initialize();
+                console.log('RRWeb database re-initialized and ready');
             } catch (error) {
                 console.error('Failed to clear database:', error);
             }
         };
+
+        // Add export helpers to window
+        (window as any).exportRRWebSession = async (sessionId?: string) => {
+            try {
+                if (!dbManager.getDebugInfo().isReady) {
+                    console.error('Database not ready. Please wait for initialization to complete.');
+                    return;
+                }
+
+                if (sessionId) {
+                    await dbManager.exportSession(sessionId);
+                } else {
+                    const sessions = await dbManager.getAllSessions();
+                    console.log('Available sessions:', sessions);
+                    console.log('Use exportRRWebSession("session-id") to export a specific session');
+                    console.log('Or use exportAllRRWebSessions() to export everything');
+                }
+            } catch (error) {
+                console.error('Failed to export session:', error);
+            }
+        };
+
+        (window as any).exportAllRRWebSessions = async () => {
+            try {
+                if (!dbManager.getDebugInfo().isReady) {
+                    console.error('Database not ready. Please wait for initialization to complete.');
+                    return;
+                }
+                await dbManager.exportAllSessions();
+            } catch (error) {
+                console.error('Failed to export all sessions:', error);
+            }
+        };
+
+        (window as any).listRRWebSessions = async () => {
+            try {
+                if (!dbManager.getDebugInfo().isReady) {
+                    console.error('Database not ready. Please wait for initialization to complete.');
+                    return [];
+                }
+
+                const sessions = await dbManager.getAllSessions();
+                console.log('Available sessions:', sessions);
+                for (const sessionId of sessions) {
+                    const events = await dbManager.getEventsBySession(sessionId);
+                    console.log(`- ${sessionId}: ${events.length} events`);
+                }
+                return sessions;
+            } catch (error) {
+                console.error('Failed to list sessions:', error);
+                return [];
+            }
+        };
+
+        // Also expose the database manager globally for advanced usage
+        (window as any).rrwebDBManager = dbManager;
 
         // Cleanup function
         return () => {
@@ -321,9 +549,13 @@ export default function RRWebRecorder() {
                 stopRecording();
                 console.log('rrweb recording stopped');
             }
-            // Clean up debug functions
+            // Clean up debug and export functions
             delete window.debugRRWebDB;
             delete window.clearRRWebDB;
+            delete (window as any).exportRRWebSession;
+            delete (window as any).exportAllRRWebSessions;
+            delete (window as any).listRRWebSessions;
+            delete (window as any).rrwebDBManager;
         };
     }, []);
 
